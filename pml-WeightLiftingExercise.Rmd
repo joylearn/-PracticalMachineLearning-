@@ -1,0 +1,239 @@
+---
+title: "Weight Lifting Exercise Prediction"
+author: "Wendy Chia"
+date: "21 July 2016"
+output: html_document
+---
+
+##Background##
+Using devices such as Jawbone Up, Nike FuelBand, and Fitbit it is now possible to collect a large amount of data about personal activity relatively inexpensively. These type of devices are part of the quantified self movement - a group of enthusiasts who take measurements about themselves regularly to improve their health, to find patterns in their behavior, or because they are tech geeks. One thing that people regularly do is quantify how much of a particular activity they do, but they rarely quantify how well they do it. In this project, your goal will be to use data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants. They were asked to perform barbell lifts correctly and incorrectly in 5 different ways. More information is available from the website here: http://groupware.les.inf.puc-rio.br/har (see the section on the Weight Lifting Exercise Dataset).
+
+### Data ###
+The training data for this project are available : [here] (https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv)
+
+The test data are available :   
+[here] (https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv)
+
+The data for this project come from this [source] (http://groupware.les.inf.puc-rio.br/har)
+
+### Project Goal###
+The goal of this project is to predict the manner in which they did the exercise. This is the "classe" variable in the training set. Describing how the model is built, how to cross validates it, evaluate the expected out of sample error, and explain the rationales of any choice made. The prediction model will be used to predict 20 different test cases.
+
+The 5 possible -Classe- values or methods are:
+
+A: exactly according to the specification B: throwing the elbows to the front C: lifting the dumbbell only halfway D: lowering the dumbbell only halfway E: throwing the hips to the front
+
+## Data Preparation ##
+
+### Data Loading###
+
+``` {r, echo=FALSE}
+setwd("~/JH/C8 - Practical Machine Learning/project")
+
+#pml.testing data has 20 obs of 160 variables.
+#pml.testing <- read.csv("https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv")
+
+#pml.traning data has 19622 obs of 160 variables
+#pml.training = read.csv("https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv")
+```
+
+Load *test* data set,  keeping it aside for predicting "classes".
+```{r}
+pml.testing <- read.csv("~/JH/C8 - Practical Machine Learning/project/pml-testing.csv")
+```
+
+Load *training* data sets, for data exploration purposes, model building cum validation purposes.
+
+```{r}
+pml.training <- read.csv("~/JH/C8 - Practical Machine Learning/project/pml-training.csv")
+```
+
+```{r, eval=FALSE, echo=FALSE}
+#pml.testing and pml.training has exact same structure except for the last 160th variable.
+colnames(pml.testing)[160]  #160th variable of pml.testing is problem_id
+colnames(pml.training[160]) #160th variable of pml.training is classe a factor with 5 levels.
+```
+
+
+### Data cleaning of training data set to have useful predictors (columns)  ###
+```{r, echo=FALSE}
+#In Model building phase, critical to use only needful columns.
+#In Model validation phase, can use either cleaned or raw-as-it-is validation data set. Watch for memory footprint. 
+#In Prediction phase, testing data can also be cleaned or raw-as-it-is data set. The latter makes sense.
+```
+
+Before fiting a model, we get rid of some columns that:  
+(1) have missing values. NAs.  
+(2) do not contribute much to the accelerometer measurements.
+
+```{r}
+# removing columns that has NA values; from 160 variables to 93 variables.
+pml.training <- pml.training[, colSums(is.na(pml.training)) == 0] 
+
+
+#returns True|False : if col names contains the string "X" or "user_name or "timestamp"" or "window""
+trainRemove <- grepl("^X|user_name|timestamp|window", names(pml.training))
+pml.training <- pml.training[, !trainRemove]  #19622 obs of 86 variables (i.e. first 7 irrelevant cols)
+
+classe <- pml.training$classe #preserve classe for it is a factor variables.
+
+#extract all columns that are numeric (including int and num), leaving out factor variables.
+trainCleaned <- pml.training[, sapply(pml.training, is.numeric)] # 19622 obs of 52 variables 
+```
+
+The model will be fitted using the following predictors/data columns:
+
+```{r}
+names(trainCleaned) #52 columns
+```
+
+
+```{r}
+# classe variable being appeneded as 53th col n is a factor variable. # same as cbind()
+trainCleaned$classe <- classe 
+
+# appending the outcome column "classe" back into data used for building model.
+```
+Now, the cleaned training data set (trainCleaned) contains 19622 observations and 52 predictors plus 1 outcome 'classe'. 
+
+
+### Data Partitioning - split the rows/obs ###
+Splitting the training data into 2 partitions for model building (70%) and model validation (30%) purposes.
+Using cross validation within the training partition to improve the model fit and then do an out-of-sample test with the validation partition.
+
+
+```{r}
+library(caret)
+set.seed(377077)  # For reproducibile purpose
+part_split <- createDataPartition(y=trainCleaned$classe, p=0.7, list=FALSE)
+training <- trainCleaned[part_split, ]       #13737 obs of 53 variables; including classes
+validation <- trainCleaned[-part_split, ]    #5885  obs of 53 variables; including classes
+```
+
+
+
+## Model building ##
+
+### Cross validation ###
+Cross validation is done for each model with K = 5, achieved using the trainControl(). 
+
+```{r}
+fitControl <- trainControl(method='cv', number = 5)
+```
+
+
+Using 3 different model algorithms to determine the model that provides the best out-of-sample accuracy. 
+The three model algorithms are :
+
+1. Decision trees with CART (rpart) # skipping this for now
+2. Stochastic gradient boosting trees (gbm) # skipping this for now
+3. Random forest decision trees (rf)  # will use rf as it is known to be have highest accuracy.
+
+
+```{r, eval=FALSE, echo=FALSE}
+
+# Decision trees with CART (rpart)
+model_cart <- train(classe ~ ., data=training, trControl=fitControl, method='rpart')
+model_cart
+save(model_cart, file='./hModelFitCART.RData')
+
+#Stochastic gradient boosting trees (gbm)
+model_gbm <- train(classe ~ ., data=training, trControl=fitControl, method='gbm')
+model_gbm
+
+save(model_gbm, file='./hModelFitGBM.RData')
+```
+
+```{r, message=FALSE}
+#Random forest decision trees (rf)
+model_rf <- train(classe ~ .,   data=training, trControl=fitControl,  method='rf',  ntree=100)
+model_rf
+save(model_rf, file='./hModelFitRF.RData')
+```
+
+
+## Model Performance's Assessment (Out of sample error) ##
+
+```{r, echo=FALSE, results='hide', eval=FALSE}
+load('./hModelFitCART.RData')
+load('./hModelFitGBM.RData')
+load('./hModelFitRF.RData')
+```
+
+
+```{r, eval=FALSE, , echo=FALSE, message=FALSE}
+
+validate_CART <- predict(model_cart, newdata=validation)
+cmCART <- confusionMatrix(validate_CART, validation$classe)
+cmCART
+
+
+validate_GBM <- predict(model_gbm, newdata=validation)
+cmGBM <- confusionMatrix(validate_GBM, validation$classe)
+cmGBM
+```
+
+```{r}
+validate_RF <- predict(model_rf, newdata=validation)
+cmRF <- confusionMatrix(validate_RF, validation$classe)
+cmRF
+cmRF$overall[1] # gives accuracy of 0.9928632
+
+#out-of-sample-Error ( 1 minus accuracy)
+oose <- 1 - as.numeric(cmRF$overall[1])
+oose
+
+```
+
+```{r, eval=FALSE,echo=FALSE}
+ AccuracyResults <- data.frame(
+  Model = c('CART', 'GBM', 'RF'),
+  Accuracy = rbind(cmCART$overall[1], cmGBM$overall[1], cmRF$overall[1])
+)
+print(AccuracyResults)
+```
+
+Some of most important variables out of all the 52 predictors in training data set.
+```{r}
+imp <- varImp(model_rf)
+imp
+```
+
+
+## Prediction of Test Data Set ##
+Now, we apply the model to the original testing data set downloaded from the data source (20 obs with 160 variables). We remove the `problem_id` column first.  
+```{r}
+#testing data whether cleaned or uncleaned-as-it-is-from-net gives the same results.
+
+result <- predict(model_rf, pml.testing[, -length(names(pml.testing))]) 
+result
+
+```
+
+## Appendix: Figures
+
+```{r}
+library(corrplot)
+library(rpart)
+library(rpart.plot)
+```
+
+1. Correlation Matrix Visualization  
+```{r, cache = T}
+# all columns must be numeric.
+var_corr <- cor(training[, -length(names(training))])
+corrplot(var_corr, method = "pie")
+```
+
+2. Decision Tree Visualization
+```{r, cache = T}
+treeModel <- rpart(classe ~ ., data=training, method="class")
+prp(treeModel) 
+```
+
+3. Top 20 variable importance Visualization
+```{r}
+# A needle plot of the random forest tree variable importance values
+plot(varImp(model_rf), top = 20)
+```
+
